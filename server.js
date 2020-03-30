@@ -3,7 +3,7 @@ const fs = require('fs');
 const app = http.createServer(function (request, response) {
   let url = request.url;
   if (request.url == '/') {
-    url = '/index2.html';
+    url = '/index.html';
   }
   if (request.url == '/favicon.ico') {
     return response.writeHead(404);
