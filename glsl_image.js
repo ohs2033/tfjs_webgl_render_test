@@ -29,9 +29,6 @@ const main = async () => {
     videoElement.addEventListener("loadeddata", onLoadedData);
 }
 
-
-
-
 const render = async () => {
     stats.begin()
     /**
@@ -119,7 +116,6 @@ const render = async () => {
     // Bind the position buffer.
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 
-    // Tell the position attribute how to get data out of posit
     // Tell the position attribute how to get data out of positionBuffer (ARRAY_BUFFER)
     var size = 2;          // 2 components per iteration
     var type = gl.FLOAT;   // the data is 32bit floats
@@ -143,9 +139,7 @@ const render = async () => {
         texcoordLocation, size, type, normalize, stride, offset);
 
     // set the resolution
-    // console.log('RESOLUTION', gl.canvas.width, gl.canvas.height)
     gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
-    // console.log(zoomPoint[0] / gl.canvas.width, zoomPoint[1] / gl.canvas.height)
     gl.uniform2f(zoomLocation, curZp[0] / gl.canvas.width, curZp[1] / gl.canvas.height)
 
     // Draw the rectangle.
@@ -157,7 +151,6 @@ const render = async () => {
 }
 
 function setRectangle(gl, x, y, width, height) {
-    console.log('xywh', x, y, width, height)
     var x1 = x;
     var x2 = x + width;
     var y1 = y;
@@ -233,7 +226,6 @@ function getMaskImage(personSegmentation, edgeBlurAmount) {
 
 
 function toMask(personOrPartSegmentation, foreground, background, drawContour, foregroundIds) {
-    // console.log('Foreground ids:', foregroundIds)
     if (foreground === void 0) {
         foreground = {
             r: 0,
