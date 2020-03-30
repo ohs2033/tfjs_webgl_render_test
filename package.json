@@ -3,10 +3,14 @@
     "@tensorflow-models/body-pix": "^2.0.4",
     "@tensorflow/tfjs": "^1.4.0",
     "a-big-triangle": "^1.0.3",
+    "ccapture.js": "aceslowman/ccapture.js#npm-fix",
+    "download.js": "^1.0.0",
     "face-api.js": "^0.22.0",
+    "fs": "^0.0.1-security",
     "gl-shader": "^4.2.1",
     "nodemon": "^2.0.2",
     "stats.js": "^0.17.0",
+    "webm-writer": "^0.2.4",
     "webpack": "^4.41.0"
   },
   "scripts": {

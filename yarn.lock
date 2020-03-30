@@ -687,6 +687,10 @@ capture-stack-trace@^1.0.0:
   resolved "https://registry.yarnpkg.com/capture-stack-trace/-/capture-stack-trace-1.0.1.tgz#a6c0bbe1f38f3aa0b92238ecb6ff42c344d4135d"
   integrity sha512-mYQLZnx5Qt1JgB1WEiMCf2647plpGeQ2NMR/5L0HNZzGQo4fuSPnK+wjfPnKZV0aiJDgzmWqqkV/g7JD+DW0qw==
 
+ccapture.js@aceslowman/ccapture.js#npm-fix:
+  version "1.0.8"
+  resolved "https://codeload.github.com/aceslowman/ccapture.js/tar.gz/98b8046970c2bfbb25f749e732f196e15c3486fd"
+
 chalk@2.4.2, chalk@^2.0.0, chalk@^2.0.1, chalk@^2.1.0, chalk@^2.4.2:
   version "2.4.2"
   resolved "https://registry.yarnpkg.com/chalk/-/chalk-2.4.2.tgz#cd42541677a54333cf541a49108c1432b44c9424"
@@ -1112,6 +1116,11 @@ dot-prop@^4.1.0:
   integrity sha512-tUMXrxlExSW6U2EXiiKGSBVdYgtV8qlHL+C10TsW4PURY/ic+eaysnSkwB4kA/mBlCyy/IKDJ+Lc3wbWeaXtuQ==
   dependencies:
     is-obj "^1.0.0"
+
+download.js@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/download.js/-/download.js-1.0.0.tgz#850536e3dd9e811d00d4992dc12952101e3fab36"
+  integrity sha512-iBKyLmMkSrrNPfQaJJPcas0nufK1aBH+6fFZP9dAAaGvYywOHH11ZfVCHvHa1aQfHjZ3tjD09APUQ6JAq38+ow==
 
 dup@^1.0.0:
   version "1.0.0"
@@ -1548,6 +1557,11 @@ fs.realpath@^1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/fs.realpath/-/fs.realpath-1.0.0.tgz#1504ad2523158caa40db4a2787cb01411994ea4f"
   integrity sha1-FQStJSMVjKpA20onh8sBQRmU6k8=
+
+fs@^0.0.1-security:
+  version "0.0.1-security"
+  resolved "https://registry.yarnpkg.com/fs/-/fs-0.0.1-security.tgz#8a7bd37186b6dddf3813f23858b57ecaaf5e41d4"
+  integrity sha1-invTcYa23d84E/I4WLV+yq9eQdQ=
 
 fsevents@^1.2.7:
   version "1.2.9"
@@ -3978,6 +3992,11 @@ weakmap-shim@^1.1.0:
   version "1.1.1"
   resolved "https://registry.yarnpkg.com/weakmap-shim/-/weakmap-shim-1.1.1.tgz#d65afd784109b2166e00ff571c33150ec2a40b49"
   integrity sha1-1lr9eEEJshZuAP9XHDMVDsKkC0k=
+
+webm-writer@^0.2.4:
+  version "0.2.4"
+  resolved "https://registry.yarnpkg.com/webm-writer/-/webm-writer-0.2.4.tgz#82478e9e0e1afd0d362dcdba2d9af46c36c39e7b"
+  integrity sha512-3qKVGTcbpKibczZpK/t24ULi3f+gSUjHhVPILF3yURy/j0TBiECsTLa3ar/HB6WT3seX2TKnI7HpZGUNs4013g==
 
 webpack-cli@^3.3.9:
   version "3.3.9"

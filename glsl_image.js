@@ -5,52 +5,171 @@ import * as bodyPix from '@tensorflow-models/body-pix';
 import Stats from "stats.js";
 const stats = new Stats();
 
+var curZp = null;
+var playId = null;
+
 document.body.appendChild(stats.dom);
 var offScreenCanvases = {};
 var blur_1 = require("./blur");
-var util_1 = require("./util");
 
-const video = document.getElementById("video");
+const videoElement = document.getElementById("video");
 let net = null
 
-var buttonOn = true;
 const main = async () => {
-    var image = new Image(); // html상에 render되진 않겠지. 그렇다면 어디에 있는거지?
-
     if (net === null) {
         net = await bodyPix.load(/** optional arguments, see below **/{
             multiplier: 1.00,
             quantBytes: 2
         });
     }
-
-    image.src = "fist.png"
-    // image.onload = function () {
-    //     render(image);
-    // }
     const onLoadedData = () => {
-        // console.log("DATA LOAD")
-        video.play();
-        requestAnimationFrame(render);
+        videoElement.play();
+        playId = requestAnimationFrame(render);
     };
-    video.addEventListener("loadeddata", onLoadedData);
+    videoElement.addEventListener("loadeddata", onLoadedData);
 }
 
-function linkProgram(gl, shader) {
-    const program = gl.createProgram();
 
-    // link shader and program
-    gl.attachShader(program, shader.vertShader);
-    gl.attachShader(program, shader.fragShader);
-    gl.linkProgram(program)
 
-    // var success = gl.getProgramParameter(program, gl.LINK_STATUS)
-    // if (!success) {
-    //     window.alert('Program link fail!');
-    //     return
-    // }
-    return program
 
+const render = async () => {
+    stats.begin()
+    /**
+     * Model Inference
+     */
+    const multiPartSegmentation = await net.segmentMultiPersonParts(videoElement);
+    const curZoomPoints = multiPartSegmentation.map(getZoomPoint)
+    const zps = []
+    let smallDistance = -1;
+    let closestIndex = -1;
+    let distance = -1;
+    if (curZp === null) {
+        curZp = curZoomPoints[1]
+        closestIndex = 1
+    } else {
+        curZoomPoints.forEach((zp, idx) => {
+            distance = Math.abs(curZp[0] - zp[0]) + Math.abs(curZp[1] - zp[1])
+            if (smallDistance < 0) {
+                smallDistance = distance;
+                closestIndex = idx
+            } else if (smallDistance > distance) {
+                smallDistance = distance;
+                closestIndex = idx
+            }
+            zps.push(zp)
+        })
+        curZp = zps[closestIndex]
+    }
+
+    const partSegmentation = multiPartSegmentation[closestIndex]
+    const edgeBlurAmount = 6;
+    const mask = getMaskImage(partSegmentation, edgeBlurAmount)
+    const canvasElement = document.getElementById('canvas');
+    const gl = canvasElement.getContext('webgl');
+
+    if (!gl) {
+        window.alert('No webgl available!')
+    }
+
+    // create shader
+    const shader = createShader(gl, VertexShader, FragShader);
+    const program = shader.program;
+
+    gl.useProgram(program);
+
+    webglUtils.resizeCanvasToDisplaySize(gl.canvas);
+    const positionLocation = gl.getAttribLocation(program, "a_position");
+    const texcoordLocation = gl.getAttribLocation(program, "a_texCoord");
+    var positionBuffer = gl.createBuffer();
+
+    // Bind it to ARRAY_BUFFER (think of it as ARRAY_BUFFER = positionBuffer)
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    // Set a rectangle the same size as the image.
+    setRectangle(gl, 0, 0, videoElement.width, videoElement.height);
+    var texcoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        0.0, 0.0,
+        1.0, 0.0,
+        0.0, 1.0,
+        0.0, 1.0,
+        1.0, 0.0,
+        1.0, 1.0,
+    ]), gl.STATIC_DRAW);
+
+    setupTexture(gl, mask, 0, program, "u_image");
+    setupTexture(gl, videoElement, 1, program, "u_image2");
+
+
+    var resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+    var zoomLocation = gl.getUniformLocation(program, 'zoom_point');
+
+    webglUtils.resizeCanvasToDisplaySize(gl.canvas);
+
+    // Tell WebGL how to convert from clip space to pixels
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+    // Clear the canvas
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // Turn on the position attribute
+    gl.enableVertexAttribArray(positionLocation);
+
+    // Bind the position buffer.
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+    // Tell the position attribute how to get data out of posit
+    // Tell the position attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+    var size = 2;          // 2 components per iteration
+    var type = gl.FLOAT;   // the data is 32bit floats
+    var normalize = false; // don't normalize the data
+    var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
+    var offset = 0;        // start at the beginning of the buffer
+    gl.vertexAttribPointer(
+        positionLocation, size, type, normalize, stride, offset);
+    // Turn on the teccord attribute
+
+    gl.enableVertexAttribArray(texcoordLocation);
+    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+
+    // Tell the position attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+    var size = 2;          // 2 components per iteration
+    var type = gl.FLOAT;   // the data is 32bit floats
+    var normalize = false; // don't normalize the data
+    var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
+    var offset = 0;        // start at the beginning of the buffer
+    gl.vertexAttribPointer(
+        texcoordLocation, size, type, normalize, stride, offset);
+
+    // set the resolution
+    // console.log('RESOLUTION', gl.canvas.width, gl.canvas.height)
+    gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
+    // console.log(zoomPoint[0] / gl.canvas.width, zoomPoint[1] / gl.canvas.height)
+    gl.uniform2f(zoomLocation, curZp[0] / gl.canvas.width, curZp[1] / gl.canvas.height)
+
+    // Draw the rectangle.
+    var primitiveType = gl.TRIANGLES;
+    var offset = 0;
+    var count = 6;
+    gl.drawArrays(primitiveType, offset, count);
+    requestAnimationFrame(render);
+}
+
+function setRectangle(gl, x, y, width, height) {
+    console.log('xywh', x, y, width, height)
+    var x1 = x;
+    var x2 = x + width;
+    var y1 = y;
+    var y2 = y + height;
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        x1, y1,
+        x2, y1,
+        x1, y2,
+        x1, y2,
+        x2, y1,
+        x2, y2,
+    ]), gl.STATIC_DRAW);
 }
 
 function setupTexture(gl, canvas, textureUnit, program, uniformName) {
@@ -74,156 +193,19 @@ function updateTextureFromCanvas(gl, tex, canvas, textureUnit) {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
 }
 
-const render = async () => {
-    stats.begin()
-    const image = video
+function getZoomPoint(partSegmentation) {
+    const nose = partSegmentation.pose.keypoints[0].position
+    const leftEye = partSegmentation.pose.keypoints[1].position
+    const rightEye = partSegmentation.pose.keypoints[2].position
+    const amount = 1.5
 
-    const partSegmentation = await net.segmentPersonParts(image);
-    const backgroundBlurAmount = 3;
-    const edgeBlurAmount = 6;
-    const flipHorizontal = false;
+    let cx = (leftEye.x + rightEye.x) / 2
+    let cy = (leftEye.y + rightEye.y) / 2
+    const deltaY = cy - nose.y
+    cy = cy - deltaY * 2 * amount
 
-    const mask = getMask(partSegmentation, edgeBlurAmount)
-    // console.log(mask)
-
-    const canvas = document.getElementById('canvas');
-    const gl = canvas.getContext('webgl');
-
-    if (!gl) {
-        window.alert('No webgl available!')
-    }
-    const zoomPoint = getZoomPoint(partSegmentation)
-    // console.log('scaleToNose:', zoomPoint)
-
-    // create shader
-    const shader = createShader(gl, VertexShader, FragShader);
-    const program = shader.program;
-    // const program = linkProgram(gl, shader)
-
-    gl.useProgram(program);
-
-    // gl.deleteProgram(program); // 왜 삭제하는거지?!
-    webglUtils.resizeCanvasToDisplaySize(gl.canvas);
-    const positionLocation = gl.getAttribLocation(program, "a_position");
-    const texcoordLocation = gl.getAttribLocation(program, "a_texCoord");
-    var positionBuffer = gl.createBuffer();
-
-    // Bind it to ARRAY_BUFFER (think of it as ARRAY_BUFFER = positionBuffer)
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    // Set a rectangle the same size as the image.
-    setRectangle(gl, 0, 0, image.width, image.height);
-
-    // provide text coordinates for the rectangle.(이게 무슨말이지?)
-
-    var texcoordBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-        0.0, 0.0,
-        1.0, 0.0,
-        0.0, 1.0,
-        0.0, 1.0,
-        1.0, 0.0,
-        1.0, 1.0,
-    ]), gl.STATIC_DRAW);
-
-    var tex1 = setupTexture(gl, mask, 0, program, "u_image");
-    var tex2 = setupTexture(gl, image, 1, program, "u_image2");
-
-    // var texture = gl.createTexture();
-    // gl.bindTexture(gl.TEXTURE_2D, texture);
-
-    // // Set the parameters so we can render any size image.
-    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
-    // gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-
-
-    // lookup uniforms
-    var resolutionLocation = gl.getUniformLocation(program, "u_resolution");
-    var zoomLocation = gl.getUniformLocation(program, 'zoom_point');
-
-    webglUtils.resizeCanvasToDisplaySize(gl.canvas);
-
-    // Tell WebGL how to convert from clip space to pixels
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-
-    // Clear the canvas
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-
-    // Tell it to use our program (pair of shaders)
-
-    // Turn on the position attribute
-    gl.enableVertexAttribArray(positionLocation);
-
-    // Bind the position buffer.
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-
-    // Tell the position attribute how to get data out of posit
-    // Tell the position attribute how to get data out of positionBuffer (ARRAY_BUFFER)
-    var size = 2;          // 2 components per iteration
-    var type = gl.FLOAT;   // the data is 32bit floats
-    var normalize = false; // don't normalize the data
-    var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
-    var offset = 0;        // start at the beginning of the buffer
-    gl.vertexAttribPointer(
-        positionLocation, size, type, normalize, stride, offset);
-    // Turn on the teccord attribute
-
-    gl.enableVertexAttribArray(texcoordLocation);
-
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
-
-    // Tell the position attribute how to get data out of positionBuffer (ARRAY_BUFFER)
-    var size = 2;          // 2 components per iteration
-    var type = gl.FLOAT;   // the data is 32bit floats
-    var normalize = false; // don't normalize the data
-    var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
-    var offset = 0;        // start at the beginning of the buffer
-    gl.vertexAttribPointer(
-        texcoordLocation, size, type, normalize, stride, offset);
-
-    // set the resolution
-    console.log('RESOLUTION', gl.canvas.width, gl.canvas.height)
-    gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
-    // console.log(zoomPoint[0] / gl.canvas.width, zoomPoint[1] / gl.canvas.height)
-    gl.uniform2f(zoomLocation, zoomPoint[0] / gl.canvas.width, zoomPoint[1] / gl.canvas.height)
-
-    // Draw the rectangle.
-    var primitiveType = gl.TRIANGLES;
-    var offset = 0;
-    var count = 6;
-    gl.drawArrays(primitiveType, offset, count);
-
-    stats.end();
-    requestAnimationFrame(render);
-
+    return [cx, cy]
 }
-
-function setRectangle(gl, x, y, width, height) {
-    console.log('xywh', x, y, width, height)
-    var x1 = x;
-    x1 = -1
-    width = 2
-    var x2 = x + width;
-    var y1 = y;
-    y1 = -1
-    height = 2;
-    var y2 = y + height;
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-        x1, y1,
-        x2, y1,
-        x1, y2,
-        x1, y2,
-        x2, y1,
-        x2, y2,
-    ]), gl.STATIC_DRAW);
-}
-
 
 function createPersonMask(multiPersonSegmentation, edgeBlurAmount) {
     var backgroundMaskImage = toMask(multiPersonSegmentation, { r: 0, g: 0, b: 0, a: 255 }, { r: 0, g: 0, b: 0, a: 0 }, false, [0, 1]);
@@ -244,15 +226,13 @@ var CANVAS_NAMES = {
 };
 
 
-function getMask(personSegmentation, edgeBlurAmount) {
+function getMaskImage(personSegmentation, edgeBlurAmount) {
     var personMask = createPersonMask(personSegmentation, edgeBlurAmount);
-
     return personMask
 }
 
 
 function toMask(personOrPartSegmentation, foreground, background, drawContour, foregroundIds) {
-
     // console.log('Foreground ids:', foregroundIds)
     if (foreground === void 0) {
         foreground = {
@@ -409,83 +389,6 @@ function renderImageDataToOffScreenCanvas(image, canvasName) {
 }
 
 
-function getZoomPoint(multiPersonSegmentation) {
-    const nose = multiPersonSegmentation.allPoses[0].keypoints[0].position
-    const leftEye = multiPersonSegmentation.allPoses[0].keypoints[1].position
-    const rightEye = multiPersonSegmentation.allPoses[0].keypoints[2].position
-    const amount = 1.5
 
-    let cx = (leftEye.x + rightEye.x) / 2
-    let cy = (leftEye.y + rightEye.y) / 2
-    const deltaY = cy - nose.y
-    cy = cy - deltaY * 2 * amount
-
-    return [cx, cy]
-}
 
 main();
-
-
-
-
-
-
-
-
-
-
-// function createTriangle(gl, program) {
-//     const positionAttributeLocation = gl.getAttribLocation(program, "a_position");
-//     var positionBuffer = gl.createBuffer();
-//     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-
-//     var positions = [
-//         0, 0,
-//         0, 0.5,
-//         0.7, 0,
-//         0, -0.3,
-//         -0.1, 0.5,
-//         0.7, 0,
-//     ];
-//     gl.bufferData(
-//         gl.ARRAY_BUFFER,
-//         new Float32Array(positions),
-//         gl.STATIC_DRAW
-//     );
-//     // @eslint-ignore
-//     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
-
-//     gl.clearColor(0, 0, 0, 0);
-//     gl.clear(gl.COLOR_BUFFER_BIT);
-//     gl.useProgram(program);
-
-//     // const texCoordLocation = gl.getAttribution()
-
-//     gl.enableVertexAttribArray(positionAttributeLocation);
-
-
-//     // position buffer 할당
-
-//     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-
-//     // attribute에게 positionBuffer(ARRAY_BUFFER)에서 데이터 가져오는 방법을 알려줍니다.
-//     var size = 2;          // 실행될 때마다 2개 구성 요소 사용
-//     var type = gl.FLOAT;   // 데이터는 32bit 소수점
-//     var normalize = false; // 정규화되지 않은 데이터
-//     var stride = 0;        // 0 = 반복할 때마다 size * sizeof(type)만큼 다음 위치로 이동
-//     var offset = 0;        // buffer 시작점
-//     gl.vertexAttribPointer(
-//         positionAttributeLocation,
-//         size,
-//         type,
-//         normalize,
-//         stride,
-//         offset
-//     );
-
-//     const primitiveType = gl.TRIANGLES;
-//     var drawOffset = 0;
-//     var count = 6;
-//     gl.drawArrays(primitiveType, drawOffset, count);
-
-// }
