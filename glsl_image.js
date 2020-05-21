@@ -3,6 +3,11 @@ import VertexShader from './shader1.vert'
 import createShader from 'gl-shader'
 import * as bodyPix from '@tensorflow-models/body-pix';
 import Stats from "stats.js";
+import { request } from 'http';
+
+require('webm-writer')
+var WebMWriter = require('webm-writer')
+// const fs = require('fs')
 const stats = new Stats();
 
 var curZp = null;
@@ -11,69 +16,173 @@ var playId = null;
 document.body.appendChild(stats.dom);
 var offScreenCanvases = {};
 var blur_1 = require("./blur");
-
+var videoWriter = null;
 const videoElement = document.getElementById("video");
+const imageElement = document.getElementById("fist")
+const buttonElement = document.getElementById('button')
 let net = null
+let fd = null
+const canvasElement = document.getElementById('canvas');
+const gl = canvasElement.getContext('webgl');
+let mask = null
 
-const main = async () => {
-    if (net === null) {
-        net = await bodyPix.load(/** optional arguments, see below **/{
-            multiplier: 1.00,
-            quantBytes: 2
-        });
-    }
-    const onLoadedData = () => {
-        videoElement.play();
-        playId = requestAnimationFrame(render);
-    };
-    videoElement.addEventListener("loadeddata", onLoadedData);
+if (!gl) {
+    window.alert('No webgl available!')
 }
 
+// create shader
+const shader = createShader(gl, VertexShader, FragShader);
+const program = shader.program;
+
+gl.useProgram(program);
+
+const outputFilename = 'output.webm'
+
+const main = async () => {
+    videoElement.load()
+    videoElement.addEventListener("canplaythrough", function () {
+        this.play();
+        this.pause();
+    });
+
+
+    // videoElement.load()
+    if (net === null) {
+        net = await bodyPix.load(/** optional arguments, see below **/{
+            multiplier: 0.75,
+            quantBytes: 2
+        });
+
+        // await render();
+        console.log('network LOAD!')
+    }
+    videoElement.playbackRate = 0.5
+    const onLoadedData = () => {
+        console.log('\n\nonLoaddata')
+        // const sample = net.segmentMultiPersonParts(videoElement);
+        // playId = requestAnimationFrame(performFrameRender);
+    };
+
+    // videoElement.play()
+    // videoElement.addEventListener('canplay', function () {
+    // this.currentTime = 5;
+    // });
+    // videoElement.addEventListener("loadeddata", onLoadedData);
+    videoElement.addEventListener('play', async () => {
+        console.log('hi')
+        playId = requestAnimationFrame(render);
+    })
+    videoElement.addEventListener("pause", async () => {
+        const webMBlob = await videoWriter.complete()
+        // fs.closeSync(webMBlob)
+        const srcName = URL.createObjectURL(webMBlob);
+        $("#hi").attr("src", srcName);
+        var dataURL = srcName
+        var a = document.createElement("a");
+        a.download = "file";
+        a.href = dataURL;
+        document.body.appendChild(a);
+        a.click();
+
+        // videoWriter = null;
+    })
+}
+
+var start = Date.now()
+var pastTime = 0
+const performFrameRender = async () => {
+    // console.log('current Time change')
+    // await videoElement.play();
+
+    // console.log(videoElement.currentTime)
+    // videoElement.pause();
+    await render();
+    // await videoElement.pause();
+    requestAnimationFrame(performFrameRender)
+}
 const render = async () => {
-    stats.begin()
+    // console.log('render start', Date.now() - start, videoElement.currentTime)
+    if (videoElement.readyState !== 4) {
+        return
+    }
+
     /**
      * Model Inference
      */
+    var duration = videoElement.currentTime - pastTime
+    duration = duration * 1000
+    pastTime = videoElement.currentTime
     const multiPartSegmentation = await net.segmentMultiPersonParts(videoElement);
+    if (!multiPartSegmentation.length) {
+        console.log('no segmentation detected', multiPartSegmentation)
+        requestAnimationFrame(render)
+        return
+    }
+
+
+    console.log(multiPartSegmentation.length)
+
+    // console.log('inference done', Date.now() - start)
+    // console.log('Duration in ms', duration)
+    if (videoWriter === null) {
+        videoWriter = new WebMWriter({
+            // quality: 0.95,    // WebM image quality from 0.0 (worst) to 1.0 (best)
+            fd: null,         // Node.js file descriptor to write to instead of buffering to memory (optional)
+            // You must supply one of:
+            // frameDuration: null, // Duration of frames in milliseconds
+            frameRate: 30,     // Number of frames per second
+        });
+    }
     const curZoomPoints = multiPartSegmentation.map(getZoomPoint)
+    console.log(curZoomPoints)
     const zps = []
     let smallDistance = -1;
     let closestIndex = -1;
     let distance = -1;
-    if (curZp === null) {
-        curZp = curZoomPoints[1]
-        closestIndex = 1
-    } else {
-        curZoomPoints.forEach((zp, idx) => {
-            distance = Math.abs(curZp[0] - zp[0]) + Math.abs(curZp[1] - zp[1])
-            if (smallDistance < 0) {
-                smallDistance = distance;
-                closestIndex = idx
-            } else if (smallDistance > distance) {
-                smallDistance = distance;
-                closestIndex = idx
-            }
-            zps.push(zp)
-        })
-        curZp = zps[closestIndex]
+    const scaleValue = canvasElement.height / videoElement.height
+    if (!multiPartSegmentation.length && !mask) {
+        console.log('pass', multiPartSegmentation.length)
+        requestAnimationFrame(render)
+        return;
     }
 
-    const partSegmentation = multiPartSegmentation[closestIndex]
-    const edgeBlurAmount = 6;
-    const mask = getMaskImage(partSegmentation, edgeBlurAmount)
-    const canvasElement = document.getElementById('canvas');
-    const gl = canvasElement.getContext('webgl');
+    if (multiPartSegmentation.length) {
+        if (curZp === null) {
+            curZp = curZoomPoints[0]
+            closestIndex = 0
+            curZp[0] = curZp[0] * scaleValue
+            curZp[1] = curZp[1] * scaleValue
+        } else {
+            curZoomPoints.forEach((zp, idx) => {
+                distance = Math.abs(curZp[0] - zp[0]) + Math.abs(curZp[1] - zp[1])
+                if (smallDistance < 0) {
+                    smallDistance = distance;
+                    closestIndex = idx
+                } else if (smallDistance > distance) {
+                    smallDistance = distance;
+                    closestIndex = idx
+                }
+                zps.push(zp)
+            })
 
-    if (!gl) {
-        window.alert('No webgl available!')
+
+            // console.log(scaleValue)
+            const newCurzp = zps[closestIndex];
+            newCurzp[0] = newCurzp[0] * scaleValue
+            newCurzp[1] = newCurzp[1] * scaleValue
+            // console.log(newCurzp)
+            curZp[0] = (curZp[0] + newCurzp[0]) / 2
+            curZp[1] = (curZp[1] + newCurzp[1]) / 2
+            // curZp = zps[closestIndex]
+        }
+
+        const partSegmentation = multiPartSegmentation[closestIndex]
+        const edgeBlurAmount = 3;
+        console.log('get mask')
+        mask = getMaskImage(partSegmentation, edgeBlurAmount)
     }
 
-    // create shader
-    const shader = createShader(gl, VertexShader, FragShader);
-    const program = shader.program;
-
-    gl.useProgram(program);
-
+    // console.log('get mask done', Date.now() - start)
     webglUtils.resizeCanvasToDisplaySize(gl.canvas);
     const positionLocation = gl.getAttribLocation(program, "a_position");
     const texcoordLocation = gl.getAttribLocation(program, "a_texCoord");
@@ -82,7 +191,7 @@ const render = async () => {
     // Bind it to ARRAY_BUFFER (think of it as ARRAY_BUFFER = positionBuffer)
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     // Set a rectangle the same size as the image.
-    setRectangle(gl, 0, 0, videoElement.width, videoElement.height);
+    setRectangle(gl, 0, 0, canvasElement.width, canvasElement.height);
     var texcoordBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -96,7 +205,6 @@ const render = async () => {
 
     setupTexture(gl, mask, 0, program, "u_image");
     setupTexture(gl, videoElement, 1, program, "u_image2");
-
 
     var resolutionLocation = gl.getUniformLocation(program, "u_resolution");
     var zoomLocation = gl.getUniformLocation(program, 'zoom_point');
@@ -147,7 +255,11 @@ const render = async () => {
     var offset = 0;
     var count = 6;
     gl.drawArrays(primitiveType, offset, count);
+
+    videoWriter.addFrame(mask, duration);
+    // videoWriter.addFrame(canvasElement, duration);
     requestAnimationFrame(render);
+    stats.end()
 }
 
 function setRectangle(gl, x, y, width, height) {
@@ -201,7 +313,7 @@ function getZoomPoint(partSegmentation) {
 }
 
 function createPersonMask(multiPersonSegmentation, edgeBlurAmount) {
-    var backgroundMaskImage = toMask(multiPersonSegmentation, { r: 0, g: 0, b: 0, a: 255 }, { r: 0, g: 0, b: 0, a: 0 }, false, [0, 1]);
+    var backgroundMaskImage = toMask(multiPersonSegmentation, { r: 255, g: 255, b: 255, a: 255 }, { r: 0, g: 0, b: 0, a: 0 }, false, [0, 1]);
     var backgroundMask = renderImageDataToOffScreenCanvas(backgroundMaskImage, CANVAS_NAMES.mask);
     if (edgeBlurAmount === 0) {
         return backgroundMask;
@@ -379,8 +491,5 @@ function renderImageDataToOffScreenCanvas(image, canvasName) {
     renderImageDataToCanvas(image, canvas);
     return canvas;
 }
-
-
-
 
 main();

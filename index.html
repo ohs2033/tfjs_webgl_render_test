@@ -12,25 +12,33 @@
         <video
           crossorigin="anonymous"
           id="video"
-          src="sinsa_output.mp4"
-          width="1280"
-          height="720px"
+          width="720"
+          height="960"
           controls
-          preload="none"
-        ></video>
-        <!-- <img src="fist.png"></div> -->
+          preload="metadata"
+        >
+        <source src="suyeong.mp4" type='video/mp4'>
+ 
+      </video>
+        <button id='button'>button</button>
+        <video controls id="hi"></video>
+        <!-- <img id="fist" src="fist.png"></div> -->
       </div>
-      <div style="position:absolute; top:1000px">
+      <div style="position:absolute; top:1500px">
         
         <h3>canvas element</h3>
         <canvas
           id="canvas"
-          width="1920"
-          height="1080"
-          style="width: 1280; height: 720;"
+          width="720"
+          height="960"
+          style="width:720; height: 960;"
         ></canvas>
       </div>
     </div>
+    <script
+  src="https://code.jquery.com/jquery-3.4.1.min.js"
+  integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo="
+  crossorigin="anonymous"></script>
         <script src="https://webglfundamentals.org/webgl/resources/webgl-utils.js"></script>
     <script type="text/javascript" src="dist/bundle.js"></script>
   </body>
