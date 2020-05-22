@@ -76,7 +76,6 @@ const main = async () => {
         const webMBlob = await videoWriter.complete()
         // fs.closeSync(webMBlob)
         const srcName = URL.createObjectURL(webMBlob);
-        $("#hi").attr("src", srcName);
         var dataURL = srcName
         var a = document.createElement("a");
         a.download = "file";
